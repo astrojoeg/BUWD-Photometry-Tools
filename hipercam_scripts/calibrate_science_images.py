@@ -1104,6 +1104,9 @@ parser.add_argument('-i', '--instrument',type=str,default='PRISM',
                     help="Name of instrument used to collect data. Needed to parse image headers.")
 args = parser.parse_args()
 instrument = args.instrument
+skipdarks=False
+if instrument=='prism' or instrument=='PRISM' or instrument=='lmi' or instrument=='LMI':
+    skipdarks = True
 
 
 # Get the current working directory
