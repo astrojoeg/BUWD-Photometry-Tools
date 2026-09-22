@@ -77,7 +77,7 @@ def fits2hcm(args=None):
     command, args = cline.script_args(args)
 
     FORMATS = ["HICKS", "INTWFC", "LTRISE", "LTIO", "PT5M", "ROSA", "LCOGT", "WHTCAM", "OSIRIS+", "PRISM",\
-                "ProEM","LMI"]
+                "ProEM","LMI","Mookodi"]
 
     # get input section
     with Cline("HIPERCAM_ENV", ".hipercam", command, args) as cl:
@@ -103,7 +103,7 @@ def fits2hcm(args=None):
         for line in fin:
             fname = line.strip()
             counter += 1
-            if origin=='PRISM' or origin=='ProEM' or origin=='LMI':
+            if origin=='PRISM' or origin=='ProEM' or origin=='LMI' or origin=='Mookodi':
                 fname = fname.split('/')[-1].replace('.fits2hcm.hcm','.fits').strip() #remove hmc_files/ and revert back to .fits
                 bname = os.path.basename(fname)
                 oname = bname.replace('.fits','.fits2hcm.hcm')
@@ -604,6 +604,56 @@ def fits2hcm(args=None):
                     ohdul = fits.HDUList([ophdu, ofhdu])
                     # oname = bname.replace('.fits','.fits2hcm.hcm')
                     ohdul.writeto('hcm_files/'+oname, overwrite=overwrite)
+
+
+
+                #### Add Mookodi imager at Lesedi-1m Telescope (SAAO)
+                elif origin == "Mookodi":
+
+                    # Copy main header into primary data-less HDU
+                    ihead = hdul[0].header
+                    ophdu = fits.PrimaryHDU(header=ihead)
+                    ophdu.header["NUMCCD"] = (1, "CCD number; fits2hcm")
+                    exptime = ihead["EXPTIME"]
+                    date_obs = Time(ihead["DATE-OBS"],format='isot',scale='utc')
+                    mjd = date_obs.to_value('mjd') + exptime / 2 / 86400
+                    time = Time(mjd, format="mjd")
+                    ophdu.header["TIMSTAMP"] = (time.isot, "Time stamp; fits2hcm")
+
+                    # Copy data into first HDU
+                    ofhdu = fits.ImageHDU(hdul[0].data)
+
+                    NXTOT = ihead['NAXIS1']
+                    NYTOT = ihead['NAXIS2']
+
+                    # Get header into right format
+                    ofhdu.header["CCD"] = ("1", "CCD label")
+                    ofhdu.header["NXTOT"] = (NXTOT, "Total unbinned X dimension")
+                    ofhdu.header["NYTOT"] = (NYTOT, "Total unbinned Y dimension")
+                    ofhdu.header["NUMWIN"] = (1, "Total number of windows")
+                    ofhdu.header["WINDOW"] = ("1", "Window label")
+                    ofhdu.header["LLX"] = (1, "X-ordinate of lower-left pixel")
+                    ofhdu.header["LLY"] = (1, "Y-ordinate of lower-left pixel")
+                    ofhdu.header["XBIN"] = (1, "X-binning factor")
+                    ofhdu.header["YBIN"] = (1, "Y-binning factor")
+                    ofhdu.header["MJDUTC"] = (mjd, "MJD at centre of exposure")
+                    ophdu.header["MJDUTC"] = (
+                        mjd,
+                        "MJD at centre of exposure; fits2hcm",
+                    )
+                    ofhdu.header["MJDINT"] = (
+                        int(mjd),
+                        "Integer part of MJD at centre of exposure",
+                    )
+                    ofhdu.header["MJDFRAC"] = (
+                        mjd - int(mjd),
+                        "Fractional part of MJD at centre of exposure",
+                    )
+                    ofhdu.header["EXPTIME"] = (exptime, "Exposure time, seconds")
+                    ohdul = fits.HDUList([ophdu, ofhdu])
+                    # oname = bname.replace('.fits','.fits2hcm.hcm')
+                    ohdul.writeto('hcm_files/'+oname, overwrite=overwrite)
+
 
 
 

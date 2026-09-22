@@ -22,6 +22,7 @@ image types, e.g. "../bias/", "../dark:, "../dome_flat/".
 import argparse
 from astropy.io import fits
 from astropy.nddata import CCDData
+from astropy.time import Time
 import astropy.units as u
 import ccdproc
 from datetime import datetime as dt
@@ -496,7 +497,7 @@ def sf_impar(path, ilist):
 
 
 # I had to make a unique function for PTO+PRISM data, since we don't have as robust time-keeping
-def sf_impar_perkins(path, ilist):
+def sf_impar_perkins(path, ilist, instrument):
     #########################################################
     ##
     ##  Load in the file names which need to be parsed
@@ -718,6 +719,21 @@ def sf_impar_perkins(path, ilist):
         def get_utc_start(path_to_fits):
             hdr = fits.getheader(path_to_fits)
             return hdr['UTCSTART']
+
+
+        def correct_LMI_timestamps(path_to_fits):
+            with fits.open(path_to_fits, mode='update') as hdul:
+                hdr = hdul[0].header
+                ut_date = str(hdr['DATE-OBS']).strip()
+                ut_date_corr = (Time(ut_date,format='isot',scale='utc') + 2.05*u.s).value
+                ut_date = str(hdr['DATE-OBS']).strip()
+                ut_end_corr = (Time(ut_date.split('T')[0].strip()+'T'+hdr['UTCEND'],format='isot',scale='utc') - 0.19*u.s).value                                            
+                hdr.set('DATE-OBS',ut_date_corr,comment='UT Time of Start of Exposure, corrected for shutter delay',after='IMAGETYP')
+                hdr.set('UTCSTART',ut_date_corr.split('T')[-1].strip(),comment='UT Time of Start of Exposure, corrected for shutter delay',after='EXPTIME') 
+                hdr.set('UT',ut_date_corr.split('T')[-1].strip(),comment='UT Time of Start of Exposure, corrected for shutter delay',after='UTCSTART') 
+                hdr.set('UTCEND',ut_end_corr.split('T')[-1].strip(),comment='UT Time of End of Exposure, corrected for shutter delay',after='UT') 
+                hdul.close()
+
         
         # ## Defining a function to add timestamps to FITS files
         # def addtimestamp(fitsname,timestamp):
@@ -764,12 +780,15 @@ def sf_impar_perkins(path, ilist):
 
         
         #Determine accurate timestamps and place in fits headers.
-        for i in range(1,num_files):
+        for i in range(num_files):
             
             ## Print progress bar
             count3  = i+1
             action3 = 'Adding timestamps to FITS headers......'
             progress_bar(count3, num_files, action3)
+
+            if instrument=='LMI' or instrument=='lmi':
+                correct_LMI_timestamps(path + filenames[i])
 
             addtimestamp(path + filenames[i],get_utc_start(path + filenames[i]))
             
@@ -857,89 +876,94 @@ def multibias(path,instrument):
 
 # Function to collate darks into a single master frame
 def multidark(path,master_bias,instrument,texp_science):
-	if instrument == 'proem' or instrument == 'ProEM' or instrument == 'PROEM':
-		# try:
-		dark_names = glob(path + 'dark_*.spe')
-		if len(dark_names)==0:
-			dark_names = glob(path + 'dark*.spe')
+    if instrument == 'proem' or instrument == 'ProEM' or instrument == 'PROEM':
+        dark_names = glob(path + 'dark_*.spe')
+        if len(dark_names)==0:
+            dark_names = glob(path + 'dark*.spe')
+        if len(dark_names)==0:
+            dark_names = glob(path + 'dark_*.fits')
+            dark_names = [d.split('-')[0] for d in dark_names]
+            dark_names = np.unique(dark_names)
 
-
-		for i in range(len(dark_names)):
-	    # get the name of each dark exposure
-			dname = dark_names[i][0:-4]
-			if len(dname.split('/')[-1].strip()) <= 6:
-				dsuff = dname.split('/')[-1].strip()[4:]+'s'
-			else:
-				dsuff = dname.split('/')[-1].strip()[5:]
-
-			# search for the FITS files using dname
-			try:
-				flist = sorted(glob(dname + '-*.fits'))
-			except Exception as ex:
-				print(ex)
-				print('Could not generate a list of FITS files for name: %s' %dname)
-				print('No List was generated for this exposure time.')
-				continue
-			# generate the string format
-			file_len = str(len(flist[0]))
-			f_format = '%' + file_len + 's'
-
-			# save the file names into a list
-			lname = 'dlist_' + dsuff
-			np.savetxt(path+lname,flist,fmt=f_format,delimiter = ' ')
-
-		# Grab all the dlists:
-		dlists = glob(path+'dlist_*s')
-
-		# Iterate through dlists to median combine the respective darks and write out master darks:
-		for d in dlists:
-			# Grab exposure time for subtracting out master dark
-			# t_exp = d[-3:]
-			t_exp = d.split('_')[-1].split('s')[0].strip()
-			# Load in individual images
-			ims = np.loadtxt(d,dtype='str')
-			# Make a master array to perform combining on:
-			master_empty = []
-			# Loop through indiviual images to append data into master array:
-			for i in range(len(ims)):
-				with fits.open(path+ims[i]) as hdul:
-					# Grab header of first image for writing out
-					if i == 0:
-						hdr = hdul[0].header
-						hdr['COMMENT'] = "Master " + t_exp + " Dark"
-						hdr['COMMENT'] = "Median combined and bias subtracted"
-					# Append data into empty array
-					if instrument == 'prism' or instrument == 'PRISM':
-						master_empty.append(hdul[0].data)
-					elif instrument == 'proem' or instrument == 'ProEM':
-						master_empty.append(hdul[0].data[0] - master_bias)
-					# Delete data to avoid mmap getting angry
-					del hdul[0].data
-			# Perform median combine and then write out
-			master_dark = np.nanmedian(master_empty,axis=0)
-			# Eliminate cosmic rays
-			# dark_og = CCDData(master_dark,unit=u.adu)
-			# master_dark_cr = ccdproc.cosmicray_lacosmic(dark_og,gain_apply=False,sigclip=5)
-			# master_dark_cr.unit = u.adu
-			# fits.writeto(path+'Dark_'+t_exp+'s.fits',data=master_dark_cr.data,header=hdr,overwrite=True)
-			fits.writeto(path+'Dark_'+t_exp+'s.fits',data=master_dark,header=hdr,overwrite=True)
-
-		# Return image 
-		with fits.open(glob(path+'Dark_'+texp_science+'s.fits')[0]) as hdul:
-			return hdul[0].data
-	elif instrument == 'prism' or instrument == 'PRISM' or instrument == 'LMI' or instrument == 'lmi':
-		return np.zeros(np.shape(master_bias)[::-1])
-
+        for i in range(len(dark_names)):
+            # get the name of each dark exposure
+            dname = dark_names[i][0:-4]
+            if len(dname.split('/')[-1].strip()) <= 6:
+                dsuff = dname.split('/')[-1].strip()[4:]+'s'
+            else:
+                dsuff = dname.split('/')[-1].strip()[5:]
+            # search for the FITS files using dname
+            try:
+                flist = sorted(glob(dname + '-*.fits'))
+            except Exception as ex:
+                print(ex)
+                print('Could not generate a list of FITS files for name: %s' %dname)
+                print('No List was generated for this exposure time.')
+                continue
+            if len(flist)==0:
+                flist = sorted(glob(dark_names[i] + '-*.fits'))
+                dsuff = dark_names[i].split('_')[-1].strip()
+            # generate the string format
+            file_len = str(len(flist[0]))
+            f_format = '%' + file_len + 's'
+            # save the file names into a list
+            lname = 'dlist_' + dsuff
+            np.savetxt(path+lname,flist,fmt=f_format,delimiter = ' ')
+        # Grab all the dlists:
+        dlists = glob(path+'dlist_*s')
+        # Iterate through dlists to median combine the respective darks and write out master darks:
+        for d in dlists:
+            # Grab exposure time for subtracting out master dark
+            # t_exp = d[-3:]
+            t_exp = d.split('_')[-1].split('s')[0].strip()
+            # Load in individual images
+            ims = np.loadtxt(d,dtype='str')
+            # Make a master array to perform combining on:
+            master_empty = []
+            # Loop through indiviual images to append data into master array:
+            for i in range(len(ims)):
+                with fits.open(path+ims[i]) as hdul:
+                    # Grab header of first image for writing out
+                    if i == 0:
+                        hdr = hdul[0].header
+                        hdr['COMMENT'] = "Master " + t_exp + " Dark"
+                        hdr['COMMENT'] = "Median combined and bias subtracted"
+                    # Append data into empty array
+                    if instrument == 'prism' or instrument == 'PRISM':
+                        master_empty.append(hdul[0].data)
+                    elif instrument == 'proem' or instrument == 'ProEM':
+                        master_empty.append(hdul[0].data[0] - master_bias)
+                    # Delete data to avoid mmap getting angry
+                    del hdul[0].data
+            # Perform median combine and then write out
+            master_dark = np.nanmedian(master_empty,axis=0)
+            # Eliminate cosmic rays
+            # dark_og = CCDData(master_dark,unit=u.adu)
+            # master_dark_cr = ccdproc.cosmicray_lacosmic(dark_og,gain_apply=False,sigclip=5)
+            # master_dark_cr.unit = u.adu
+            # fits.writeto(path+'Dark_'+t_exp+'s.fits',data=master_dark_cr.data,header=hdr,overwrite=True)
+            fits.writeto(path+'Dark_'+t_exp+'s.fits',data=master_dark,header=hdr,overwrite=True)
+        # Return image 
+        with fits.open(glob(path+'Dark_'+texp_science+'s.fits')[0]) as hdul:
+            return hdul[0].data
+    elif instrument == 'prism' or instrument == 'PRISM' or instrument == 'LMI' or instrument == 'lmi':
+        return np.zeros(np.shape(master_bias)[::-1])
 
 
 # Function to collate flats into a single master frame
 def multiflat(path, master_bias, instrument, skip_darks):
     if instrument == 'proem' or instrument == 'ProEM':
         flat_names = sorted(glob(path+'*.spe'))
+        if len(flat_names)==0:
+            flat_names = sorted(glob(path+'*.fits'))
+            flat_names = [f.split('-')[0].strip() for f in flat_names]
+            flat_names = np.unique(flat_names)
         for i in range(len(flat_names)):
             # get the name of each flat field exposure
             fname = flat_names[i][0:-4] #removes .spe extension
             fsuff = fname.split('/')[-1].strip()
+            if fname[-1]=='_':
+                fsuff = flat_names[i].split('/')[-1].strip()
             # search for the FITS files using dname
             try:
                 flist = sorted(glob(fname + '*.fits'))
@@ -999,8 +1023,9 @@ def multiflat(path, master_bias, instrument, skip_darks):
         flat_names = np.loadtxt(l,dtype=str,delimiter=' ')
         for i,f in enumerate(flat_names):
             if i==0:
-                # Grab exposure time for writing our master flat
+                # Grab exposure time and filtern for writing our master flat
                 t_exp_flat = str(get_texp(f,instrument))
+                filter_name = get_filter(f,instrument)
                 # Grab master dark with correct texp for the flats
                 if skip_darks:
                     master_dark_flat = np.zeros((xdim,ydim))
@@ -1105,7 +1130,7 @@ parser.add_argument('-i', '--instrument',type=str,default='PRISM',
 args = parser.parse_args()
 instrument = args.instrument
 skipdarks=False
-if instrument=='prism' or instrument=='PRISM' or instrument=='lmi' or instrument=='LMI':
+if instrument=='prism' or instrument=='PRISM' or instrument=='lmi' or instrument=='LMI' or instrument=='mookodi' or instrument=='Mookodi':
     skipdarks = True
 
 
@@ -1124,7 +1149,7 @@ xdim, ydim = get_images_dimensions(ilist[0])
 
 # Edit image headers
 if instrument=='prism' or instrument=='PRISM' or instrument=='lmi' or instrument=='LMI':
-	sf_impar_perkins(path,ilist)
+	sf_impar_perkins(path,ilist,instrument)
 else:
 	sf_impar(path,ilist)
 
@@ -1178,7 +1203,6 @@ elif instrument=='prism' or instrument=='PRISM' or instrument=='lmi' or instrume
 	master_dark = np.zeros_like(master_bias)
 
 
-
 ##### Reudce Flats #####
 # First look to see if a master flat already exists:
 try:
@@ -1214,7 +1238,7 @@ except IndexError:
 			with fits.open(glob('../sky_flat/Sky_Flat*'+filter_name+'*.fits')[0])  as hdul:
 				master_flat = hdul[0].data
 		except (FileNotFoundError,IndexError):
-			flat_path = input('Enter the path to your flats directory from your current working directory and search string (e.g., "../flats/*.fits"). Enter "N" to pass. : ')
+			flat_path = input('Enter the path to your flats directory from your current working directory and search string (e.g., "../flats/"). Enter "N" to pass. : ')
 			if flat_path!='n' or flat_path!='N':
 				multiflat(flat_path,master_bias,instrument,skip_darks=skipdarks)
 				with fits.open(glob(flat_path+'*Flat*'+filter_name+'*.fits')[0]) as hdul: #get_filter(ilist[0],instrument)
