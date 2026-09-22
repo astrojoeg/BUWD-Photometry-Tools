@@ -126,8 +126,10 @@ def get_loc(hdr,telcode):
         loc = EarthLocation.of_site('mcdonald')
     elif telcode == 'coud':
         loc = EarthLocation.of_site('mcdonald')
-    elif telcode == 'pto' or telcode == 'ldt':
+    elif telcode == 'pto':
         loc = EarthLocation.of_site('lowell')
+    elif telcode == 'ldt':
+        loc = EarthLocation.of_site('Happy Jack')
     elif telcode == 'pjmo':
         loc = EarthLocation.from_geodetic(
             lon=31.67991667*u.deg,
@@ -159,6 +161,8 @@ def get_loc(hdr,telcode):
             lon=-45.5825*u.deg,
             lat=-22.71777778*u.deg,
             height=1864.0*u.m)
+    elif telcode == 'mookodi':
+        loc = EarthLocation.of_site('saao')
     return loc
 
 # LNA:  long= W 45 34 57  lat= -22 43 04, altitude = 1864m

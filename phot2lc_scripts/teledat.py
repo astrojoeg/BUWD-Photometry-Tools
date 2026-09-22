@@ -172,7 +172,22 @@ def get_telinfo():
      "tformat" :1,
      "dark"    :np.nan,
      "read"    :np.nan,
-     "gain"    :1.00},]
+     "gain"    :1.00},
+
+     {"telename":"Lesedi 1m",
+     "instname":"Mookodi",
+     "code"    :"mookodi",
+     "objname" :"OBJECT",
+     "filter"  :"FILTERA",
+     "observer":"OBSERVER",
+     "date"    :"DATE-OBS",
+     "time"    :None,
+     "texp"    :"EXPTIME",
+     "dformat" :1,
+     "tformat" :1,
+     "dark"    :np.nan,
+     "read"    :"RDNOISE",
+     "gain"    :"GAIN"},]
 
     return tele_info
 
