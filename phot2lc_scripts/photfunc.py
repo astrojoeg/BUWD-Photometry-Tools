@@ -163,6 +163,11 @@ def get_loc(hdr,telcode):
             height=1864.0*u.m)
     elif telcode == 'mookodi':
         loc = EarthLocation.of_site('saao')
+    elif telcode == 'troodos':
+        loc = EarthLocation.from_geodetic(
+            lon=34.926421*u.deg,
+            lat=32.999140*u.deg,
+            height=1234.0*u.m)
     return loc
 
 # LNA:  long= W 45 34 57  lat= -22 43 04, altitude = 1864m

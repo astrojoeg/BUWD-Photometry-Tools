@@ -187,7 +187,23 @@ def get_telinfo():
      "tformat" :1,
      "dark"    :np.nan,
      "read"    :"RDNOISE",
-     "gain"    :"GAIN"},]
+     "gain"    :"GAIN"},
+
+
+     {"telename":'Troodos Observatory 20" Planewave CDK',
+     "instname":"MoravianC3-61000-PRO-IMX455",
+     "code"    :"troodos",
+     "objname" :"OBJECT",
+     "filter"  :"FILTER",
+     "observer":"OBSERVER",
+     "date"    :"DATE-OBS",
+     "time"    :None,
+     "texp"    :"EXPTIME",
+     "dformat" :1,
+     "tformat" :1,
+     "dark"    :np.nan,
+     "read"    :3.51,
+     "gain"    :0.780}]
 
     return tele_info
 
