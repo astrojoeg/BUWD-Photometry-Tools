@@ -718,7 +718,10 @@ def sf_impar_perkins(path, ilist, instrument):
 
         def get_utc_start(path_to_fits):
             hdr = fits.getheader(path_to_fits)
-            return hdr['UTCSTART']
+            if instrument=='Troodos':
+                return hdr['DATE-OBS'].split('T')[-1].strip()
+            else:
+                return hdr['UTCSTART']
 
 
         def correct_LMI_timestamps(path_to_fits):
@@ -810,7 +813,7 @@ def get_texp(fname, instrument):
 	if instrument == 'proem' or instrument == 'ProEM':
 		print(texp_read,texp_read/1000.0,round(texp_read/1000.0),int(round(texp_read/1000.0)))
 		return int(round(texp_read/1000.0))
-	elif instrument == 'prism' or instrument == 'PRISM' or instrument=='lmi' or instrument=='LMI':
+	elif instrument == 'prism' or instrument == 'PRISM' or instrument=='lmi' or instrument=='LMI' or 'Troodos':
 		return int(texp_read)
 
 
@@ -946,7 +949,7 @@ def multidark(path,master_bias,instrument,texp_science):
         # Return image 
         with fits.open(glob(path+'Dark_'+texp_science+'s.fits')[0]) as hdul:
             return hdul[0].data
-    elif instrument == 'prism' or instrument == 'PRISM' or instrument == 'LMI' or instrument == 'lmi':
+    elif instrument == 'prism' or instrument == 'PRISM' or instrument == 'LMI' or instrument == 'lmi' or instrument=='Troodos':
         return np.zeros(np.shape(master_bias)[::-1])
 
 
@@ -988,7 +991,7 @@ def multiflat(path, master_bias, instrument, skip_darks):
 		    # lname_ds = lname + '_ds'
 		    # np.savetxt(path+lname_ds,flist_ds,fmt='%s',delimiter=' ')
 	    
-    elif instrument == 'prism' or instrument == 'PRISM' or instrument == 'lmi' or instrument == 'LMI':
+    elif instrument == 'prism' or instrument == 'PRISM' or instrument == 'lmi' or instrument == 'LMI' or instrument=='Troodos':
         try:
             flat_names = sorted(glob(path+'*.fits')).remove('test.fits')
         except ValueError:
@@ -1043,7 +1046,7 @@ def multiflat(path, master_bias, instrument, skip_darks):
                     hdr['COMMENT'] = "Median combined"
                     hdr['COMMENT'] = "Bias and dark subtracted"
                 # Append data into empty array
-                if instrument == 'prism' or instrument == 'PRISM' or instrument=='LMI' or instrument=='lmi':
+                if instrument == 'prism' or instrument == 'PRISM' or instrument=='LMI' or instrument=='lmi' or instrument=='Troodos':
                     master_empty.append(hdul[0].data - master_bias)
                 elif instrument == 'proem' or instrument == 'ProEM' or instrument=='PROEM':
                     master_empty.append(hdul[0].data[0] - master_dark_flat - master_bias)
@@ -1095,7 +1098,7 @@ def reduce_ims(path,ilist,olist,master_bias,master_dark,master_flat,instrument):
                                     exposure_unit=u.second,
                                     dark_scale=False,
                                     master_flat=CCDData(master_flat,unit=u.adu))
-            elif instrument == 'prism' or instrument == 'PRISM' or instrument=='LMI' or instrument=='lmi':
+            elif instrument == 'prism' or instrument == 'PRISM' or instrument=='LMI' or instrument=='lmi' or instrument=='Troodos':
                 ccd = CCDData(hdul[0].data,unit=u.adu)
                 ccd.header['exposure'] = float(texp_science)
                 reduced = ccdproc.ccd_process(ccd, #oscan='[201:232,1:100]',
@@ -1130,7 +1133,7 @@ parser.add_argument('-i', '--instrument',type=str,default='PRISM',
 args = parser.parse_args()
 instrument = args.instrument
 skipdarks=False
-if instrument=='prism' or instrument=='PRISM' or instrument=='lmi' or instrument=='LMI' or instrument=='mookodi' or instrument=='Mookodi':
+if instrument=='prism' or instrument=='PRISM' or instrument=='lmi' or instrument=='LMI' or instrument=='mookodi' or instrument=='Mookodi' or instrument=='Troodos':
     skipdarks = True
 
 
@@ -1148,13 +1151,21 @@ xdim, ydim = get_images_dimensions(ilist[0])
 
 
 # Edit image headers
-if instrument=='prism' or instrument=='PRISM' or instrument=='lmi' or instrument=='LMI':
+if instrument=='prism' or instrument=='PRISM' or instrument=='lmi' or instrument=='LMI' or instrument=='Troodos':
 	sf_impar_perkins(path,ilist,instrument)
 else:
 	sf_impar(path,ilist)
 
 # Get filter name
 filter_name = get_filter(ilist[0],instrument)
+#add filters to Troodos dome flats:
+if instrument=='Troodos':
+    t_flats = glob('../sky_flat/*.fits')
+    for f in t_flats:
+         with fits.open(f, mode='update') as hdul:
+                hdr = hdul[0].header
+                hdr.set('FILTER',filter_name,comment='filter',after='GAIN')
+                hdul.close()
 
 # Grab the exposure time
 with fits.open(ilist[0]) as hdul:
@@ -1168,7 +1179,7 @@ if isfile('../bias/Bias.fits'):
 	with fits.open('../bias/Bias.fits') as hdul:
 		if instrument=='proem' or instrument=='ProEM' or instrument=='PROEM':
 			master_bias = hdul[0].data
-		elif instrument=='prism' or instrument=='PRISM' or instrument=='lmi' or instrument=='LMI':
+		elif instrument=='prism' or instrument=='PRISM' or instrument=='lmi' or instrument=='LMI' or instrument=='Troodos':
 			master_bias = hdul[0].data
 else:
 	try:
@@ -1199,52 +1210,61 @@ if instrument=='proem' or instrument=='ProEM' or instrument=='PROEM':
 				master_dark = multidark(dark_path,master_bias,instrument,texp_science)
 			else:
 				master_dark = np.zeros((xdim,ydim))
-elif instrument=='prism' or instrument=='PRISM' or instrument=='lmi' or instrument=='LMI':
+elif instrument=='prism' or instrument=='PRISM' or instrument=='lmi' or instrument=='LMI' or instrument=='Troodos':
 	master_dark = np.zeros_like(master_bias)
 
 
 ##### Reudce Flats #####
-# First look to see if a master flat already exists:
-try:
-	# Check that you have the case of the filter name to correctly match the images
-	try:
-		isfile(glob('../dome_flat/Dome_Flat_*'+filter_name+'*.fits')[0])
-	except IndexError:
-		filter_name = filter_name.lower()
-	# Load in the flats
-	if isfile(glob('../dome_flat/Dome_Flat_*'+filter_name+'*.fits')[0]):
-		print('\nYou already have a master dome flat image. Proceeding ahead...\n')
-		print('Opening:',glob('../dome_flat/Dome_Flat_*'+filter_name+'*.fits')[0])
-		with fits.open(glob('../dome_flat/Dome_Flat_*'+filter_name+'*.fits')[0]) as hdul:
-			if instrument=='proem' or instrument=='ProEM' or instrument=='PROEM':
-				master_flat = hdul[0].data
-			elif instrument=='prism' or instrument=='PRISM' or instrument=='lmi' or instrument=='LMI':
-				master_flat = hdul[0].data
-	elif isfile('../sky_flat/Sky_Flat*.fits'):
-		print('\nYou already have a master sky flat image. Proceeding ahead...\n')
-		with fits.open('../sky_flat/Sky_Flat*.fits') as hdul:
-			if instrument=='proem' or instrument=='ProEM' or instrument=='PROEM':
-				master_flat = hdul[0].data[0]
-			elif instrument=='prism' or instrument=='PRISM' or instrument=='lmi' or instrument=='LMI':
-				master_flat = hdul[0].data
-except IndexError:
-	try:
-		multiflat('../dome_flat/',master_bias,instrument,skip_darks=skipdarks)
-		with fits.open(glob('../dome_flat/Dome_Flat*'+filter_name+'*.fits')[0]) as hdul:
-			master_flat = hdul[0].data
-	except (FileNotFoundError,IndexError):
-		try:
-			multiflat('../sky_flat/',master_bias,instrument,skip_darks=skipdarks)
-			with fits.open(glob('../sky_flat/Sky_Flat*'+filter_name+'*.fits')[0])  as hdul:
-				master_flat = hdul[0].data
-		except (FileNotFoundError,IndexError):
-			flat_path = input('Enter the path to your flats directory from your current working directory and search string (e.g., "../flats/"). Enter "N" to pass. : ')
-			if flat_path!='n' or flat_path!='N':
-				multiflat(flat_path,master_bias,instrument,skip_darks=skipdarks)
-				with fits.open(glob(flat_path+'*Flat*'+filter_name+'*.fits')[0]) as hdul: #get_filter(ilist[0],instrument)
-					master_flat = hdul[0].data
-			else:
-				master_flat=np.zeros((xdim,ydim))+1.
+if instrument!='Troodos':
+    # First look to see if a master flat already exists:
+    try:
+    	# Check that you have the case of the filter name to correctly match the images
+    	try:
+    		isfile(glob('../dome_flat/Dome_Flat_*'+filter_name+'*.fits')[0])
+    	except IndexError:
+    		filter_name = filter_name.lower()
+    	# Load in the flats
+    	if isfile(glob('../dome_flat/Dome_Flat_*'+filter_name+'*.fits')[0]):
+    		print('\nYou already have a master dome flat image. Proceeding ahead...\n')
+    		print('Opening:',glob('../dome_flat/Dome_Flat_*'+filter_name+'*.fits')[0])
+    		with fits.open(glob('../dome_flat/Dome_Flat_*'+filter_name+'*.fits')[0]) as hdul:
+    			if instrument=='proem' or instrument=='ProEM' or instrument=='PROEM':
+    				master_flat = hdul[0].data
+    			elif instrument=='prism' or instrument=='PRISM' or instrument=='lmi' or instrument=='LMI' or instrument=='Troodos':
+    				master_flat = hdul[0].data
+    	elif isfile('../sky_flat/Sky_Flat*.fits'):
+    		print('\nYou already have a master sky flat image. Proceeding ahead...\n')
+    		with fits.open('../sky_flat/Sky_Flat*.fits') as hdul:
+    			if instrument=='proem' or instrument=='ProEM' or instrument=='PROEM':
+    				master_flat = hdul[0].data[0]
+    			elif instrument=='prism' or instrument=='PRISM' or instrument=='lmi' or instrument=='LMI' or instrument=='Troodos':
+    				master_flat = hdul[0].data
+    except IndexError:
+    	try:
+    		multiflat('../dome_flat/',master_bias,instrument,skip_darks=skipdarks)
+    		with fits.open(glob('../dome_flat/Dome_Flat*'+filter_name+'*.fits')[0]) as hdul:
+    			master_flat = hdul[0].data
+    	except (FileNotFoundError,IndexError):
+    		try:
+    			multiflat('../sky_flat/',master_bias,instrument,skip_darks=skipdarks)
+    			with fits.open(glob('../sky_flat/Sky_Flat*'+filter_name+'*.fits')[0])  as hdul:
+    				master_flat = hdul[0].data
+    		except (FileNotFoundError,IndexError):
+    			flat_path = input('Enter the path to your flats directory from your current working directory and search string (e.g., "../flats/"). Enter "N" to pass. : ')
+    			if flat_path!='n' or flat_path!='N':
+    				multiflat(flat_path,master_bias,instrument,skip_darks=skipdarks)
+    				with fits.open(glob(flat_path+'*Flat*'+filter_name+'*.fits')[0]) as hdul: #get_filter(ilist[0],instrument)
+    					master_flat = hdul[0].data
+    			else:
+    				master_flat=np.zeros((xdim,ydim))+1.
+else:
+    if isfile('../sky_flat/Sky_Flat*.fits'):
+        with fits.open(glob('../sky_flat/Sky_Flat*.fits')[0])  as hdul:
+            master_flat = hdul[0].data
+    else:
+        multiflat('../sky_flat/',master_bias,instrument,skip_darks=skipdarks)
+        with fits.open(glob('../sky_flat/Sky_Flat*'+filter_name+'*.fits')[0])  as hdul:
+            master_flat = hdul[0].data
 
 
 # Reduce images
@@ -1276,6 +1296,8 @@ if instrument=='prism' or instrument=='PRISM':
     copyfile('/Users/astrojoe/Research/hipercam/reduce_prism.red','reduce.red')
 if instrument=='lmi' or instrument=='LMI':
     copyfile('/Users/astrojoe/Research/hipercam/reduce_lmi.red','reduce.red')
+if instrument=='Troodos':
+    copyfile('/Users/astrojoe/Research/hipercam/reduce_troodos.red','reduce.red')
 
 # Suppress ImportError
 try:
