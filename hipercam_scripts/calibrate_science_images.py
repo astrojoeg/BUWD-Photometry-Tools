@@ -728,8 +728,12 @@ def sf_impar_perkins(path, ilist, instrument):
             with fits.open(path_to_fits, mode='update') as hdul:
                 hdr = hdul[0].header
                 ut_date = str(hdr['DATE-OBS']).strip()
-                ut_date_corr = (Time(ut_date,format='isot',scale='utc') + 2.05*u.s).value
-                ut_date = str(hdr['DATE-OBS']).strip()
+                try:
+                    ut_date_corr = (Time(ut_date,format='isot',scale='utc') + 2.05*u.s).value
+                except ValueError:
+                    if len(ut_date.split(":")[-1].split('.')[0].strip())==3: #sometimes extra 0 in seconds
+                        ut_date = ut_date.split('.')[0].strip()[:-1]+'.'+ut_date.split('.')[-1].strip()
+                        ut_date_corr = (Time(ut_date,format='isot',scale='utc') + 2.05*u.s).value
                 ut_end_corr = (Time(ut_date.split('T')[0].strip()+'T'+hdr['UTCEND'],format='isot',scale='utc') - 0.19*u.s).value                                            
                 hdr.set('DATE-OBS',ut_date_corr,comment='UT Time of Start of Exposure, corrected for shutter delay',after='IMAGETYP')
                 hdr.set('UTCSTART',ut_date_corr.split('T')[-1].strip(),comment='UT Time of Start of Exposure, corrected for shutter delay',after='EXPTIME') 
